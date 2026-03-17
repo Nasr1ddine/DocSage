@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DocSage — Internal Docs Chatbot</title>
+  <style>
+    :root {
+      --bg: #050710;
+      --panel: #0d1117;
+      --accent: #4ade80;
+      --accent-soft: rgba(74, 222, 128, 0.12);
+      --border: #1f2933;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --error: #f97373;
+      --bubble-user: #1e293b;
+      --bubble-assistant: #020617;
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at top left, #111827 0, #020617 45%, #020617 100%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      height: 100vh;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+    }
+    .shell {
+      width: 100%;
+      max-width: 1100px;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      gap: 16px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .title {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .title h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .title h1 span.badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--muted);
+    }
+    .title p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .switch {
+      position: relative;
+      width: 64px;
+      height: 26px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #4b5563, #111827);
+      padding: 2px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+    }
+    .switch-thumb {
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 20%, #ffffff 0, #e5e7eb 35%, #6b7280 100%);
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.9), 0 10px 20px rgba(0,0,0,0.7);
+      transform: translateX(0);
+      transition: transform 0.18s ease-out;
+    }
+    .switch[data-mode="tuned"] .switch-thumb {
+      transform: translateX(36px);
+    }
+    .switch-labels {
+      display: flex;
+      justify-content: space-between;
+      position: absolute;
+      inset: 0;
+      padding: 0 8px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      align-items: center;
+      pointer-events: none;
+      color: rgba(209,213,219,0.45);
+    }
+    .switch[data-mode="naive"] .label-naive {
+      color: var(--accent);
+    }
+    .switch[data-mode="tuned"] .label-tuned {
+      color: var(--accent);
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .panel {
+      flex: 1;
+      background: radial-gradient(circle at top right, rgba(34,197,94,0.05), transparent 55%), var(--panel);
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      box-shadow:
+        0 18px 40px rgba(0,0,0,0.9),
+        0 0 0 1px rgba(15,23,42,0.8);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg-row {
+      display: flex;
+      gap: 8px;
+    }
+    .msg-row.user {
+      justify-content: flex-end;
+    }
+    .msg-bubble {
+      max-width: 72%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .msg-row.user .msg-bubble {
+      background: linear-gradient(135deg, #1e293b, #020617);
+      border-bottom-right-radius: 2px;
+    }
+    .msg-row.assistant .msg-bubble {
+      background: radial-gradient(circle at top left, rgba(74,222,128,0.15), transparent 60%), #020617;
+      border-bottom-left-radius: 2px;
+      border: 1px solid rgba(148,163,184,0.4);
+    }
+    .msg-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .latency-badge {
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.6);
+      padding: 1px 8px;
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .latency-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 8px rgba(74,222,128,0.8);
+    }
+
+    .citations {
+      margin-top: 8px;
+      border-radius: 10px;
+      background: rgba(15,23,42,0.9);
+      border: 1px solid rgba(55,65,81,0.9);
+      overflow: hidden;
+    }
+    .citations-header {
+      padding: 6px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      cursor: pointer;
+      background: radial-gradient(circle at left, rgba(74,222,128,0.15), transparent 70%);
+    }
+    .citations-header span {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .citations-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.18s ease-out;
+      border-top: 1px solid rgba(31,41,55,0.95);
+    }
+    .citations-body.open {
+      max-height: 260px;
+    }
+    .citation-card {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(31,41,55,0.95);
+      display: grid;
+      grid-template-columns: 1.8fr 0.8fr;
+      gap: 8px;
+    }
+    .citation-card:last-child {
+      border-bottom: none;
+    }
+    .citation-meta {
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-family: var(--mono);
+    }
+    .citation-preview {
+      font-size: 11px;
+      color: #e5e7eb;
+      font-family: var(--mono);
+      background: #020617;
+      border-radius: 6px;
+      padding: 6px 8px;
+      border: 1px solid rgba(31,41,55,0.95);
+    }
+
+    .input-row {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    textarea {
+      width: 100%;
+      resize: none;
+      min-height: 60px;
+      max-height: 120px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(55,65,81,0.9);
+      background: rgba(2,6,23,0.9);
+      outline: none;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(74,222,128,0.4);
+    }
+    button {
+      border: none;
+      cursor: pointer;
+      border-radius: 999px;
+      padding: 10px 18px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      background: radial-gradient(circle at top left, #4ade80, #22c55e);
+      color: #020617;
+      font-weight: 600;
+      box-shadow:
+        0 12px 24px rgba(22, 163, 74, 0.65),
+        0 0 0 1px rgba(34,197,94,0.7);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .skeleton {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(15,23,42,0.8);
+      border: 1px solid rgba(31,41,55,0.9);
+    }
+    .skeleton-line {
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #111827, #1e293b, #111827);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+    .skeleton-line:nth-child(2) {
+      width: 80%;
+    }
+    .skeleton-line:nth-child(3) {
+      width: 60%;
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    .error-banner {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.6);
+      font-size: 12px;
+      color: var(--error);
+      display: none;
+    }
+    .error-banner.visible {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="header">
+      <div class="title">
+        <h1>
+          DocSage
+          <span class="badge">Internal Docs Chatbot</span>
+        </h1>
+        <p>Ask questions over your internal PDFs with inline source citations and hybrid retrieval.</p>
+      </div>
+      <div class="toggle-group">
+        <span>Naive</span>
+        <div class="switch" id="mode-switch" data-mode="tuned">
+          <div class="switch-thumb"></div>
+          <div class="switch-labels">
+            <span class="label-naive">Naive</span>
+            <span class="label-tuned">Tuned</span>
+          </div>
+        </div>
+        <span>Tuned</span>
+      </div>
+    </div>
+
+    <div class="main">
+      <div id="error" class="error-banner"></div>
+      <div class="panel">
+        <div id="messages" class="messages"></div>
+        <div id="loading" class="skeleton" style="display:none;">
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line"></div>
+        </div>
+        <div class="input-row">
+          <textarea id="question" placeholder="Ask about a figure, risk factor, or section from your docs..."></textarea>
+          <button id="send-btn">
+            <span>Send</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "http://localhost:8000";
+
+    const messagesEl = document.getElementById("messages");
+    const questionEl = document.getElementById("question");
+    const sendBtn = document.getElementById("send-btn");
+    const loadingEl = document.getElementById("loading");
+    const errorEl = document.getElementById("error");
+    const modeSwitch = document.getElementById("mode-switch");
+
+    let currentMode = "tuned"; // "naive" or "tuned"
+
+    modeSwitch.addEventListener("click", () => {
+      currentMode = currentMode === "tuned" ? "naive" : "tuned";
+      modeSwitch.dataset.mode = currentMode;
+    });
+
+    function appendMessage(role, text, meta = null, citations = null) {
+      const row = document.createElement("div");
+      row.className = "msg-row " + role;
+
+      const bubble = document.createElement("div");
+      bubble.className = "msg-bubble";
+      bubble.textContent = text;
+      row.appendChild(bubble);
+
+      if (meta || citations) {
+        const metaRow = document.createElement("div");
+        metaRow.className = "msg-meta";
+
+        if (meta && meta.latencyMs != null) {
+          const badge = document.createElement("span");
+          badge.className = "latency-badge";
+          const dot = document.createElement("span");
+          dot.className = "latency-dot";
+          const label = document.createElement("span");
+          label.textContent = `answered in ${Math.round(meta.latencyMs)} ms`;
+          badge.appendChild(dot);
+          badge.appendChild(label);
+          metaRow.appendChild(badge);
+        }
+        if (meta && meta.mode) {
+          const textEl = document.createElement("span");
+          textEl.textContent = meta.mode === "tuned" ? "Tuned chunking + hybrid" : "Naive chunking (baseline)";
+          metaRow.appendChild(textEl);
+        }
+        bubble.appendChild(metaRow);
+      }
+
+      if (citations && citations.length > 0) {
+        const wrap = document.createElement("div");
+        wrap.className = "citations";
+
+        const header = document.createElement("div");
+        header.className = "citations-header";
+        header.innerHTML = `<span>Citations</span><span>${citations.length} chunks</span>`;
+
+        const body = document.createElement("div");
+        body.className = "citations-body";
+
+        header.addEventListener("click", () => {
+          body.classList.toggle("open");
+        });
+
+        citations.forEach((c) => {
+          const card = document.createElement("div");
+          card.className = "citation-card";
+
+          const metaCol = document.createElement("div");
+          metaCol.className = "citation-meta";
+          metaCol.innerHTML = `
+            <span>${c.source || "unknown"}</span>
+            <span>page ${c.page ?? "?"}</span>
+            <span>score ${c.score != null ? c.score.toFixed(3) : "–"}</span>
+          `;
+
+          const preview = document.createElement("div");
+          preview.className = "citation-preview";
+          const snippet = (c.text || "").slice(0, 150).replace(/\s+/g, " ");
+          preview.textContent = snippet + (c.text.length > 150 ? "…" : "");
+
+          card.appendChild(metaCol);
+          card.appendChild(preview);
+          body.appendChild(card);
+        });
+
+        wrap.appendChild(header);
+        wrap.appendChild(body);
+        bubble.appendChild(wrap);
+      }
+
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function setLoading(isLoading) {
+      loadingEl.style.display = isLoading ? "flex" : "none";
+      sendBtn.disabled = isLoading;
+    }
+
+    function setError(message) {
+      if (message) {
+        errorEl.textContent = message;
+        errorEl.classList.add("visible");
+      } else {
+        errorEl.classList.remove("visible");
+        errorEl.textContent = "";
+      }
+    }
+
+    async function sendQuestion() {
+      const question = questionEl.value.trim();
+      if (!question) return;
+
+      setError(null);
+      appendMessage("user", question);
+      questionEl.value = "";
+
+      setLoading(true);
+
+      const mode = currentMode;
+      const url = API_BASE + "/chat/stream";
+      const payload = { question, collection: mode };
+
+      const row = document.createElement("div");
+      row.className = "msg-row assistant";
+      const bubble = document.createElement("div");
+      bubble.className = "msg-bubble";
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      let buffer = "";
+      let started = performance.now();
+
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errBody = await res.text();
+          let errMsg = `Backend ${res.status}`;
+          try {
+            const j = JSON.parse(errBody);
+            if (j.detail) errMsg += ": " + (Array.isArray(j.detail) ? j.detail.map(d => d.msg || d).join("; ") : j.detail);
+          } catch (_) {
+            if (errBody) errMsg += ": " + errBody.slice(0, 200);
+          }
+          throw new Error(errMsg);
+        }
+        if (!res.body) {
+          throw new Error("Backend returned no response body");
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n\n");
+          for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
+            const data = line.replace(/^data:\s*/, "");
+            if (data === "[DONE]") break;
+            buffer += data;
+            bubble.textContent = buffer;
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          }
+        }
+
+        const latencyMs = performance.now() - started;
+
+        // After stream completes, fetch final JSON for citations + latencies
+        const jsonRes = await fetch(API_BASE + "/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!jsonRes.ok) {
+          const errBody = await jsonRes.text();
+          let errMsg = `Backend ${jsonRes.status}`;
+          try {
+            const j = JSON.parse(errBody);
+            if (j.detail) errMsg += ": " + (Array.isArray(j.detail) ? j.detail.map(d => d.msg || d).join("; ") : j.detail);
+          } catch (_) {
+            if (errBody) errMsg += ": " + errBody.slice(0, 200);
+          }
+          throw new Error(errMsg);
+        }
+        const data = await jsonRes.json();
+
+        bubble.textContent = data.answer;
+
+        const metaRow = document.createElement("div");
+        metaRow.className = "msg-meta";
+        const badge = document.createElement("span");
+        badge.className = "latency-badge";
+        const dot = document.createElement("span");
+        dot.className = "latency-dot";
+        const label = document.createElement("span");
+        label.textContent = `answered in ${Math.round(data.latency_ms)} ms`;
+        badge.appendChild(dot);
+        badge.appendChild(label);
+        metaRow.appendChild(badge);
+        const modeText = document.createElement("span");
+        modeText.textContent = mode === "tuned" ? "Tuned chunking + hybrid" : "Naive chunking (baseline)";
+        metaRow.appendChild(modeText);
+        bubble.appendChild(metaRow);
+
+        if (data.citations && data.citations.length > 0) {
+          const wrap = document.createElement("div");
+          wrap.className = "citations";
+          const header = document.createElement("div");
+          header.className = "citations-header";
+          header.innerHTML = `<span>Citations</span><span>${data.citations.length} chunks</span>`;
+          const body = document.createElement("div");
+          body.className = "citations-body";
+          header.addEventListener("click", () => {
+            body.classList.toggle("open");
+          });
+          data.citations.forEach((c) => {
+            const card = document.createElement("div");
+            card.className = "citation-card";
+            const metaCol = document.createElement("div");
+            metaCol.className = "citation-meta";
+            metaCol.innerHTML = `
+              <span>${c.source || "unknown"}</span>
+              <span>page ${c.page ?? "?"}</span>
+              <span>score ${c.score != null ? c.score.toFixed(3) : "–"}</span>
+            `;
+            const preview = document.createElement("div");
+            preview.className = "citation-preview";
+            const snippet = (c.text || "").slice(0, 150).replace(/\s+/g, " ");
+            preview.textContent = snippet + (c.text.length > 150 ? "…" : "");
+            card.appendChild(metaCol);
+            card.appendChild(preview);
+            body.appendChild(card);
+          });
+          wrap.appendChild(header);
+          wrap.appendChild(body);
+          bubble.appendChild(wrap);
+        }
+      } catch (err) {
+        console.error(err);
+        const msg = err.message || "API is unreachable or returned an error.";
+        setError(msg);
+        bubble.textContent = "Error: " + msg;
+      } finally {
+        setLoading(false);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    }
+
+    sendBtn.addEventListener("click", () => {
+      sendQuestion();
+    });
+    questionEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendQuestion();
+      }
+    });
+  </script>
+</body>
+</html>
+

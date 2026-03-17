@@ -1,0 +1,8 @@
+[
+  {
+    "question": "Example factual question 1 (replace with real question from your PDFs).",
+    "ground_truth": "Replace with the exact ground truth answer from the document.",
+    "source_doc": "example_source.pdf"
+  }
+]
+
